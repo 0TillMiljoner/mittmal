@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8" />
+<title>Mål-timer – När når du X kr?</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+  body{
+    margin:0;
+    background:radial-gradient(circle at top,#1e293b,#020617);
+    font-family: system-ui, -apple-system, Segoe UI;
+    color:white;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    min-height:100vh;
+  }
+  .card{
+    width:92%;
+    max-width:600px;
+    background:#020617cc;
+    border-radius:24px;
+    padding:28px;
+    border:1px solid #1f2937;
+    box-shadow:0 35px 120px rgba(0,0,0,.6);
+    backdrop-filter: blur(10px);
+  }
+  h1{ margin:0 0 8px 0; }
+  .subtitle{
+    color:#9ca3af;
+    font-size:0.92rem;
+    margin-bottom:18px;
+  }
+  label{ font-size:0.9rem; }
+  input{
+    width:100%;
+    padding:10px;
+    margin-top:6px;
+    border-radius:12px;
+    border:1px solid #374151;
+    background:#020617;
+    color:white;
+    font-size:1rem;
+  }
+  .small-note{
+    font-size:0.8rem;
+    color:#9ca3af;
+    margin-top:4px;
+  }
+  button{
+    margin-top:16px;
+    width:100%;
+    padding:12px;
+    border-radius:18px;
+    border:none;
+    background:linear-gradient(135deg,#2563eb,#3b82f6);
+    color:white;
+    font-size:1.05rem;
+    cursor:pointer;
+    transition:0.15s;
+  }
+  button:hover{ transform:translateY(-1px); opacity:0.9; }
+
+  .result{
+    margin-top:18px;
+    background:#050b1c;
+    border-radius:14px;
+    padding:14px;
+    border:1px solid #1f293b;
+    font-size:1rem;
+  }
+  .highlight{ color:#38bdf8; font-weight:700; }
+
+  .chart-container{
+    margin-top:18px;
+    background:#050b1c;
+    border-radius:14px;
+    padding:12px;
+    border:1px solid #1f293b;
+  }
+  .chart-title{
+    font-size:0.9rem;
+    color:#9ca3af;
+    margin-bottom:6px;
+  }
+
+  /* Instagram-banner */
+  .ig{
+    margin-top:18px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:10px;
+    border-radius:16px;
+    border:1px solid #1f2937;
+    background:#020617cc;
+    text-decoration:none;
+    color:white;
+  }
+  .ig img{
+    width:50px;
+    height:50px;
+    border-radius:12px;
+  }
+  .ig-text{ font-size:0.9rem; }
+  .ig-text span{ color:#a5f3fc; }
+  .footer{
+    margin-top:8px;
+    font-size:0.8rem;
+    color:#6b7280;
+    text-align:right;
+  }
+</style>
+</head>
+
+<body>
+<div class="card">
+  <h1>Mål-timer</h1>
+  <p class="subtitle">Räkna hur lång tid det tar att nå ett målbelopp med ränta på ränta + månadsspar.</p>
+
+  <label>Kapital idag (kr)</label>
+  <input id="start" type="number" placeholder="t.ex 100000" />
+
+  <label>Månadsspar (kr)</label>
+  <input id="monthly" type="number" placeholder="t.ex 5000" />
+
+  <label>Förväntad avkastning per år (%)</label>
+  <input id="rate" type="number" step="0.1" placeholder="t.ex 7" />
+  <div class="small-note">Vi räknar med månadsvis compounding (års% / 12).</div>
+
+  <label>Målbelopp (kr)</label>
+  <input id="target" type="number" placeholder="t.ex 1000000" />
+
+  <button onclick="calc()">Beräkna tid</button>
+
+  <div id="res" class="result" style="display:none;"></div>
+
+  <div id="chartWrapper" class="chart-container" style="display:none;">
+    <div class="chart-title">Utveckling över tid</div>
+    <canvas id="goalChart" height="220"></canvas>
+  </div>
+
+  <a class="ig" href="https://instagram.com/nolltillmiljoner" target="_blank">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png" alt="Instagram">
+    <div class="ig-text">
+      Skapad av <span>@nolltillmiljoner</span><br>
+      Följ för mer gratis verktyg och annat om investeringar 🔥
+    </div>
+  </a>
+
+  <div class="footer">NollTillMiljoner – gratis verktyg för investerare</div>
+</div>
+
+<script>
+let goalChart = null;
+
+function formatKr(x){
+  return x.toLocaleString("sv-SE", { maximumFractionDigits: 0 });
+}
+function formatDateYYYYMM(date){
+  // svensk-ish: YYYY-MM
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,'0');
+  return `${y}-${m}`;
+}
+
+function calc(){
+  const start = parseFloat(document.getElementById("start").value) || 0;
+  const monthly = parseFloat(document.getElementById("monthly").value) || 0;
+  const rateYearPct = parseFloat(document.getElementById("rate").value);
+  const target = parseFloat(document.getElementById("target").value);
+
+  if(isNaN(rateYearPct) || isNaN(target) || target <= 0){
+    alert("Fyll i minst avkastning (%) och målbelopp.");
+    return;
+  }
+
+  if(start >= target){
+    document.getElementById("res").style.display = "block";
+    document.getElementById("res").innerHTML =
+      `Du har redan nått målet 🎯<br><br>` +
+      `Kapital idag: <span class="highlight">${formatKr(start)} kr</span><br>` +
+      `Mål: <span class="highlight">${formatKr(target)} kr</span>`;
+    document.getElementById("chartWrapper").style.display = "none";
+    if(goalChart){ goalChart.destroy(); goalChart = null; }
+    return;
+  }
+
+  // Om både start & monthly är 0 kan vi aldrig nå målet
+  if(start <= 0 && monthly <= 0){
+    alert("Du kan inte nå målet om både kapital och månadsspar är 0.");
+    return;
+  }
+
+  const rMonth = (rateYearPct / 100) / 12;
+
+  // Vi simulerar månad för månad tills vi når målet,
+  // men sätter en hård gräns för att undvika oändliga loopar.
+  const MAX_MONTHS = 2000; // ~166 år
+  let months = 0;
+
+  let value = start;
+  let invested = start;
+
+  // för graf
+  const labels = [];
+  const data = [];
+  labels.push("0 mån");
+  data.push(Math.round(value));
+
+  while(value < target && months < MAX_MONTHS){
+    // avkastning
+    value = value * (1 + rMonth);
+    // månadsspar
+    value += monthly;
+
+    invested += monthly;
+    months++;
+
+    // spara punkt var 1 månad första 36, sen var 3:e månad för att hålla grafen lätt
+    if(months <= 36 || months % 3 === 0 || value >= target){
+      labels.push(months + " mån");
+      data.push(Math.round(value));
+    }
+  }
+
+  if(months >= MAX_MONTHS && value < target){
+    document.getElementById("res").style.display = "block";
+    document.getElementById("res").innerHTML =
+      `Med dessa antaganden når du inte målet inom rimlig tid (>${MAX_MONTHS} månader).<br><br>` +
+      `Tips: öka månadsspar, sänk mål eller räkna med annan avkastning.`;
+    document.getElementById("chartWrapper").style.display = "none";
+    if(goalChart){ goalChart.destroy(); goalChart = null; }
+    return;
+  }
+
+  const years = Math.floor(months / 12);
+  const remMonths = months % 12;
+
+  const gain = value - invested;
+
+  // uppskattat måldatum (från nu i användarens browser)
+  const now = new Date();
+  const targetDate = new Date(now.getFullYear(), now.getMonth() + months, 1);
+
+  const resDiv = document.getElementById("res");
+  resDiv.style.display = "block";
+  resDiv.innerHTML =
+    `Du når <span class="highlight">${formatKr(target)} kr</span> om ungefär ` +
+    `<span class="highlight">${years} år</span> och <span class="highlight">${remMonths} månader</span>.<br>` +
+    `Ungefär runt: <span class="highlight">${formatDateYYYYMM(targetDate)}</span>.<br><br>` +
+    `Slutvärde (vid målet): <span class="highlight">${formatKr(value)} kr</span><br>` +
+    `Totalt insatt: <span class="highlight">${formatKr(invested)} kr</span><br>` +
+    `Avkastning (ca): <span class="highlight">${formatKr(gain)} kr</span><br><br>` +
+    `<span style="font-size:0.85rem;color:#9ca3af;">Obs: förenklad modell (jämn avkastning varje månad).</span>`;
+
+  // graf
+  document.getElementById("chartWrapper").style.display = "block";
+  const ctx = document.getElementById("goalChart").getContext("2d");
+
+  if(goalChart){ goalChart.destroy(); }
+
+  goalChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Portföljvärde (kr)",
+        data: data,
+        borderColor: "rgba(59,130,246,1)",
+        backgroundColor: "rgba(59,130,246,0.18)",
+        borderWidth: 2,
+        pointRadius: 2,
+        tension: 0.25
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { labels: { color: "#e5e7eb" } }
+      },
+      scales: {
+        x: {
+          ticks: { color: "#9ca3af" },
+          grid: { color: "rgba(55,65,81,0.3)" }
+        },
+        y: {
+          ticks: {
+            color: "#9ca3af",
+            callback: v => v.toLocaleString("sv-SE")
+          },
+          grid: { color: "rgba(55,65,81,0.3)" }
+        }
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>
